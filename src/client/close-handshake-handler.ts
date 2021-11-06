@@ -1,0 +1,5 @@
+class CloseHandshakeHandler {
+
+}
+
+export = CloseHandshakeHandler;

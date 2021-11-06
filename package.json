@@ -1,0 +1,27 @@
+{
+  "name": "websocket",
+  "version": "1.0.0",
+  "description": "This is a minimal Websocket client implementation in NodeJS",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "tsc-watch --onSuccess \"node ./dist/index.js\" --onFailure \"echo 'Compilation failed'\""
+  },
+  "keywords": [
+    "websocket",
+    "networking",
+    "node",
+    "javascript",
+    "client"
+  ],
+  "author": "Ferenc Revesz",
+  "license": "ISC",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^16.11.6",
+    "ts-node": "^10.4.0",
+    "tsc-watch": "^4.5.0",
+    "typescript": "^4.4.4",
+    "ws": "^8.2.3"
+  }
+}
