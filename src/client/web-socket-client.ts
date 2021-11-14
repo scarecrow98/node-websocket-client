@@ -1,11 +1,11 @@
-import EventEmitter, { on } from "events";
+import EventEmitter from "events";
 import { createConnection, Socket } from "net";
-import { OpenHandshakeHandler, ResponseLine } from "./open-handshake-handler";
+import { OpenHandshakeHandler } from "./open-handshake-handler";
+import SocketReader from "./socket-reader";
 
 export interface WebSocketConnectOptions {
     port: number;
     host: string;
-    version: number;
 };
 
 export class WebSocketClient extends EventEmitter {
@@ -15,13 +15,16 @@ export class WebSocketClient extends EventEmitter {
 
     private openHandshakeHandler: OpenHandshakeHandler;
 
+    private socketReader: SocketReader;
+
+    private state: 'connecting' | 'connected' | 'disconnected' = 'connecting';
+
     constructor(options: Partial<WebSocketConnectOptions>) {
         super();
 
         this.options = {
             port: 80,
             host: 'localhost',
-            version: 13,
             ...options
         }
 
@@ -31,24 +34,46 @@ export class WebSocketClient extends EventEmitter {
         });
 
         this.openHandshakeHandler = new OpenHandshakeHandler(this.socket, this.options);
+        this.socketReader = new SocketReader(this.socket);
+        this.initSocketListeners();
+    }
+
+    private initHandshake() {
 
         this.openHandshakeHandler.on('handshake-success', () => {
-            this.openHandshakeHandler.removeAllListeners();
+            this.state = 'connected';
             this.emit('connect');
         });
 
         this.openHandshakeHandler.on('handshake-fail', (reason: string) => {
-            this.openHandshakeHandler.removeAllListeners();
             this.socket.destroy();
+            this.state = 'disconnected'
             this.emit('error', reason);
         });
 
-        this.socket.on('close', this.handleSocketClose.bind(this));
-
-        
+        this.openHandshakeHandler.doUpgrade();
     }
 
-    private handleSocketClose() {
-        this.emit('disconnect');
+    private initSocketListeners() {
+        this.socketReader.on('handshake-response', (data: Buffer) => {
+            this.openHandshakeHandler.handleResponse(data);
+        });
+
+        this.socketReader.on('message', (message: string) => {
+            this.emit('message', message);
+        });
+
+        this.socketReader.on('binary', (data: Buffer) => {
+            this.emit('binary', data);
+        });
+
+        this.socket.on('connect', this.initHandshake.bind(this));
+
+        this.socket.on('error', (err) => {
+            this.socket.removeAllListeners();
+            this.state = 'disconnected';
+            this.emit('error', err.message);
+            this.emit('disconnect');
+        });
     }
 }

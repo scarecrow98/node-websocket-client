@@ -2,11 +2,18 @@ import { WebSocketClient } from "./client/web-socket-client";
 
 const ws = new WebSocketClient({
     port: 3200,
-    version: 9
 });
 
 ws.on('connect', () => {
     console.log('connected');
+});
+
+ws.on('message', (message: string) => {
+    console.log('string message length', message.length);
+});
+
+ws.on('binary', (data: Buffer) => {
+    console.log('binary message length: ', data.length);
 });
 
 ws.on('error', (reason: string) => {

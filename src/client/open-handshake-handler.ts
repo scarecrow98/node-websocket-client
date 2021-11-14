@@ -5,7 +5,15 @@ import { randomBytes, createHash } from 'crypto';
 
 const MAGIC_WS_UID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
-export interface ResponseLine {
+enum HandshakeResponseError {
+    MALFORMED_RESPONSE = 'The server responded with a malformed handshake',
+    UNEXPECTED_STATUS_CODE = 'The server responded with a unexpected status code: ',
+    INVALID_UPGRADE_HEADER = `The response handshake's Upgrade header is invalid`,
+    INVALID_CONNECTION_HEADER = `The response handshake's Connection header is invalid`,
+    INVALID_ACCEPT_KEY_VALUE = 'The Sec-WebSocket-Accept value is invalild in the response handshake'
+}
+
+interface ResponseLine {
     httpVersion: string;
     statusCode: number;
     statusText: string;
@@ -21,19 +29,17 @@ export class OpenHandshakeHandler extends EventEmitter {
 
         this.options = options;
         this.socket = socket;
-
-        this.socket.on('connect', this.doUpgrade.bind(this));
-        this.socket.on('data', this.onResponse.bind(this));
     }
 
-    private doUpgrade() {
+    doUpgrade() {
         this.secKey = this.generateSecKey();
+
         const upgradeHeaders = [
             'GET / HTTP/1.1',
             `Host: ${this.options.host}:${this.options.port}`,
             'Upgrade: websocket',
             'Connection: Upgrade',
-            `Sec-WebSocket-Version: ${this.options.version}`,
+            `Sec-WebSocket-Version: 13`,
             `Sec-WebSocket-Key: ${this.secKey}`
         ].join("\r\n");
 
@@ -41,39 +47,52 @@ export class OpenHandshakeHandler extends EventEmitter {
         this.socket.end(); //tcp fin
     }
 
-    private onResponse(data: Buffer) {
+    handleResponse(data: Buffer) {
         const lines = data.toString()?.split("\r\n").filter(x => !!x !== false);
         
         if (!lines || lines.length == 0) {
-            return this.emit('handshake-fail', 'The server responded with a malformed handshake');
+            return this.handshakeFailure(HandshakeResponseError.MALFORMED_RESPONSE);
         }
 
         const responseLine = this.parseResponseLine(lines[0]);
         
         if (!responseLine) {
-            return this.emit('handshake-fail', 'The server responded with a malformed handshake');
+            return this.handshakeFailure(HandshakeResponseError.MALFORMED_RESPONSE);
         }
 
         if (responseLine.statusCode !== 101) {
-            return this.emit('handshake-fail', `The server responded with status code ${responseLine.statusCode} [${responseLine.statusText}]`);
+            return this.handshakeFailure(HandshakeResponseError.UNEXPECTED_STATUS_CODE + responseLine.statusCode);
         }
 
         lines.shift();
         const headers = this.parseHeaders(lines);
 
-        if ((headers['upgrade'] !== 'websocket')
-        || headers['connection'] !== 'Upgrade') {
-            return this.emit('handshake-fail', `Invalid response handshakre headers`);
+        if ( headers['upgrade']?.toLowerCase() !== 'websocket' ) {
+            return this.handshakeFailure(HandshakeResponseError.INVALID_UPGRADE_HEADER);
+        }
+        
+        if ( headers['connection']?.toLowerCase() !== 'upgrade' ) {
+            return this.handshakeFailure(HandshakeResponseError.INVALID_UPGRADE_HEADER);
         }
 
         if (!this.validateSecKey(headers['sec-websocket-accept'])) {
-            return this.emit('handshake-fail', `Invalid Sec-WebSocket-Accept header value`);
+            return this.handshakeFailure(HandshakeResponseError.INVALID_ACCEPT_KEY_VALUE);
         }
 
-        this.emit('handshake-success');
+        this.handshakeSuccess();
     }
 
-    dispose() {
+    private handshakeFailure(message: string ) {
+        this.emit('handshake-failure', message);
+        this.dispose();
+    }
+
+    private handshakeSuccess() {
+        this.emit('handshake-success');
+        this.dispose();
+    }
+
+    private dispose() {
         this.removeAllListeners();
     }
 
